@@ -1,0 +1,29 @@
+name: Update Match Results
+
+on:
+  schedule:
+    - cron: '5 3,6,9,12,15,18,21,0 * * *'  # Every 3 hours, 5 minutes past
+  workflow_dispatch:
+
+jobs:
+  update-results:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Set up Python 3.11
+        uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+
+      - name: Install dependencies
+        run: |
+          pip install -r requirements.txt
+
+      - name: Update match results from TheSportsDB
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          SPORTAPI_KEY: ${{ secrets.SPORTAPI_KEY }}
+        run: python update_results.py
