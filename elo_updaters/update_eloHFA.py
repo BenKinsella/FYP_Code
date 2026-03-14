@@ -1,10 +1,10 @@
 """
 Premier League Elo Updater — Dynamic HFA Variant
 -------------------------------------------------
-HFA is estimated dynamically using exponential decay weighting.
-After each match day (not each match), the average implied HFA
-across all matches played that day is used to update the estimate.
-This prevents individual results from swinging the HFA wildly.
+HFA is estimated dynamically using ClubElo's method.
+After each match day, HFA is updated based on whether home or
+away teams won more Elo points that day:
+    HFA += sum(delta) * 0.075
 
 Stores results in elo1_hfa (same schema as elo1 + hfa column).
 """
@@ -22,8 +22,8 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 LEAGUE_ID  = 1980
 START_DATE = date(2025, 10, 8)
 INIT_ELO   = 1500
-HFA_INIT   = 42.0   # starting HFA before any matches are seen
-ALPHA      = 0.10   # decay rate — lower = slower, more stable
+HFA_INIT   = 42.0
+HFA_RATE   = 0.005   # ClubElo's HFA update rate
 K          = 20
 
 # ── PL team whitelist (results1 names) ───────────────────────────────────────
@@ -52,35 +52,23 @@ def csv_to_results1(name: str) -> str:
     return CSV_TO_RESULTS.get(name, name)
 
 
-# ── Elo engine with dynamic HFA ───────────────────────────────────────────────
+# ── Elo engine with dynamic HFA (ClubElo method) ─────────────────────────────
 class FootballEloDynamicHFA:
     def __init__(self, initial_elos: dict, init_elo=INIT_ELO,
-                 hfa_init=HFA_INIT, alpha=ALPHA, k=K):
-        self.elo      = initial_elos.copy()
-        self.init_elo = init_elo
-        self.hfa      = float(hfa_init)
-        self.alpha    = alpha
-        self.k        = k
+                 hfa_init=HFA_INIT, hfa_rate=HFA_RATE, k=K):
+        self.elo         = initial_elos.copy()
+        self.init_elo    = init_elo
+        self.hfa         = float(hfa_init)
+        self.hfa_rate    = hfa_rate
+        self.k           = k
         self.hfa_history = []
 
     def expected(self, elo_home: float, elo_away: float, hfa: float) -> float:
         return 1 / (1 + 10 ** ((elo_away + hfa - elo_home) / 400))
 
-    def implied_hfa(self, elo_home: float, elo_away: float,
-                    home_goals: int, away_goals: int) -> float:
-        """
-        Back-solve what HFA value would make E_home = S_home exactly.
-        E = 1 / (1 + 10^((elo_away + hfa - elo_home) / 400)) = S
-        => hfa = (elo_home - elo_away) - 400 * log10(1/S - 1)
-        S is clipped away from 0/1 to keep log finite.
-        """
-        S = 1.0 if home_goals > away_goals else (0.5 if home_goals == away_goals else 0.0)
-        S_clipped = float(np.clip(S, 0.01, 0.99))
-        return float((elo_home - elo_away) - 400 * np.log10(1 / S_clipped - 1))
-
     def update_elos(self, home_team: str, away_team: str,
                     home_goals: int, away_goals: int) -> float:
-        """Apply Elo update using current HFA. Returns implied HFA for this match."""
+        """Apply Elo update using current HFA. Returns delta for HFA update."""
         elo_home = self.elo.get(home_team, self.init_elo)
         elo_away = self.elo.get(away_team, self.init_elo)
 
@@ -92,17 +80,22 @@ class FootballEloDynamicHFA:
         self.elo[home_team] = elo_home + delta
         self.elo[away_team] = elo_away - delta
 
-        return self.implied_hfa(elo_home, elo_away, home_goals, away_goals)
+        return delta
 
-    def update_hfa(self, implied_hfa_values: list, match_date: date) -> None:
-        """Update HFA estimate using the mean implied HFA across today's matches."""
-        day_mean_hfa = float(np.mean(implied_hfa_values))
-        self.hfa = float((1 - self.alpha) * self.hfa + self.alpha * day_mean_hfa)
+    def update_hfa(self, deltas: list, match_date: date) -> None:
+        """
+        Update HFA using ClubElo's method:
+            HFA += sum(delta) * 0.075
+        If home teams collectively gained more Elo points, HFA increases.
+        If away teams gained more, HFA decreases.
+        """
+        delta_sum = float(np.sum(deltas))
+        self.hfa  = float(self.hfa + delta_sum * self.hfa_rate)
         self.hfa_history.append({
-            "date":          match_date,
-            "hfa":           round(self.hfa, 3),
-            "day_mean_impl": round(day_mean_hfa, 3),
-            "n_matches":     len(implied_hfa_values),
+            "date":      match_date,
+            "hfa":       round(self.hfa, 3),
+            "delta_sum": round(delta_sum, 3),
+            "n_matches": len(deltas),
         })
 
     def snapshot(self, teams: set) -> dict:
@@ -191,21 +184,21 @@ def main():
             if current_date in matches_by_date.groups:
                 day_matches = matches_by_date.get_group(current_date)
 
-                # Step 1: update Elos for all matches today, collect implied HFAs
-                implied_hfas = []
+                # Step 1: update Elos for all matches today, collect deltas
+                deltas = []
                 for _, match in day_matches.iterrows():
-                    impl = engine.update_elos(
+                    delta = engine.update_elos(
                         home_team  = match["home_team"],
                         away_team  = match["away_team"],
                         home_goals = int(match["home_score"]),
                         away_goals = int(match["away_score"]),
                     )
-                    implied_hfas.append(impl)
+                    deltas.append(delta)
 
-                # Step 2: update HFA once using mean of today's implied HFAs
-                engine.update_hfa(implied_hfas, current_date)
+                # Step 2: update HFA once using sum of today's deltas
+                engine.update_hfa(deltas, current_date)
                 print(f"  {current_date}: {len(day_matches)} match(es). "
-                      f"Day implied HFA={np.mean(implied_hfas):.1f} → "
+                      f"Delta sum={np.sum(deltas):.1f} → "
                       f"Running HFA={engine.hfa:.2f}")
 
             # Snapshot PL teams with current HFA
@@ -226,11 +219,11 @@ def main():
 
         # 4. HFA evolution summary
         hfa_df = pd.DataFrame(engine.hfa_history)
-        print(f"\n── HFA Evolution (start={HFA_INIT}, alpha={ALPHA}) ──")
+        print(f"\n── HFA Evolution (start={HFA_INIT}, rate={HFA_RATE}) ──")
         print(f"  Starting HFA : {HFA_INIT}")
         print(f"  Final HFA    : {hfa_df['hfa'].iloc[-1]}")
         print(f"  Min / Max    : {hfa_df['hfa'].min()} / {hfa_df['hfa'].max()}")
-        print(f"  Mean implied : {hfa_df['day_mean_impl'].mean():.2f}")
+        print(f"  Mean delta_sum: {hfa_df['delta_sum'].mean():.2f}")
         print("\nDone! elo1_hfa is up to date.")
 
     finally:

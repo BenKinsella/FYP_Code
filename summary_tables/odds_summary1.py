@@ -6,7 +6,7 @@ PL Odds Analysis Pipeline
      - Fixed-HFA Elo    (opening + closing)
      - Dynamic-HFA Elo  (opening + closing)
      - Pinnacle         (opening + closing)
-3. Upserts everything into match_odds_analysis
+3. Upserts everything into match_odds_analysis1
 """
 
 import psycopg2
@@ -177,18 +177,20 @@ def main():
             prev_date  = match_date - timedelta(days=1)
             open_date  = row["open_date"]
             result     = row["result"]
+            close_date = row["close_date"]
+            elo_close_date = close_date if close_date < match_date else prev_date
 
             # ── Fixed HFA ────────────────────────────────────────────────────
             fh_o = elo_fixed.get((row["home_team"], open_date))
             fa_o = elo_fixed.get((row["away_team"], open_date))
-            fh_c = elo_fixed.get((row["home_team"], prev_date))
-            fa_c = elo_fixed.get((row["away_team"], prev_date))
+            fh_c = elo_fixed.get((row["home_team"], elo_close_date))
+            fa_c = elo_fixed.get((row["away_team"], elo_close_date))
 
             # ── Dynamic HFA ──────────────────────────────────────────────────
             dh_o = elo_dynamic.get((row["home_team"], open_date))
             da_o = elo_dynamic.get((row["away_team"], open_date))
-            dh_c = elo_dynamic.get((row["home_team"], prev_date))
-            da_c = elo_dynamic.get((row["away_team"], prev_date))
+            dh_c = elo_dynamic.get((row["home_team"], elo_close_date))
+            da_c = elo_dynamic.get((row["away_team"], elo_close_date))
 
             if None in (fh_o, fa_o, fh_c, fa_c, dh_o, da_o, dh_c, da_c):
                 skipped += 1
@@ -257,7 +259,7 @@ def main():
         # ── Ensure table has all columns ──────────────────────────────────────
         with conn.cursor() as cur:
             cur.execute("""
-                CREATE TABLE IF NOT EXISTS match_odds_analysis (
+                CREATE TABLE IF NOT EXISTS match_odds_analysis1 (
                     event_id              BIGINT PRIMARY KEY,
                     home_team             VARCHAR(100),
                     away_team             VARCHAR(100),
@@ -321,7 +323,7 @@ def main():
             psycopg2.extras.execute_batch(
                 cur,
                 """
-                INSERT INTO match_odds_analysis (
+                INSERT INTO match_odds_analysis1 (
                     event_id, home_team, away_team, starts, home_score, away_score, result,
                     elo_home_open, elo_away_open, elo_home_close, elo_away_close,
                     dhfa_elo_home_open, dhfa_elo_away_open, dhfa_elo_home_close, dhfa_elo_away_close,
@@ -387,7 +389,7 @@ def main():
                 page_size=200,
             )
         conn.commit()
-        print(f"Done! {len(rows)} rows upserted into match_odds_analysis.")
+        print(f"Done! {len(rows)} rows upserted into match_odds_analysis1.")
 
         # ── Summary ───────────────────────────────────────────────────────────
         summary = pd.read_sql_query("""
@@ -399,7 +401,7 @@ def main():
                 ROUND(AVG(ig_pin_open),   4) AS pinnacle_open,
                 ROUND(AVG(ig_pin_close),  4) AS pinnacle_close,
                 COUNT(*) AS n_matches
-            FROM match_odds_analysis
+            FROM match_odds_analysis1
         """, conn)
         print("\n── Average Information Gain (lower = better) ──")
         print(summary.to_string(index=False))

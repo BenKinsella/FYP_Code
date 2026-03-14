@@ -187,20 +187,22 @@ def main():
         skipped = 0
 
         for _, row in df.iterrows():
-            match_date = row["match_date"]
-            prev_date  = match_date - timedelta(days=1)
-            open_date  = row["open_date"]
-            result     = row["result"]
+            match_date     = row["match_date"]
+            prev_date      = match_date - timedelta(days=1)
+            open_date      = row["open_date"]
+            close_date     = row["close_date"]
+            elo_close_date = close_date if close_date < match_date else prev_date
+            result         = row["result"]
 
             # Get probs for each model at open and close
-            base_o  = get_probs(elo_base,  row["home_team"], row["away_team"], open_date,  draw_base, draw_slope)
-            base_c  = get_probs(elo_base,  row["home_team"], row["away_team"], prev_date,  draw_base, draw_slope)
-            hfa_o   = get_probs(elo_hfa,   row["home_team"], row["away_team"], open_date,  draw_base, draw_slope)
-            hfa_c   = get_probs(elo_hfa,   row["home_team"], row["away_team"], prev_date,  draw_base, draw_slope)
-            decay_o = get_probs(elo_decay, row["home_team"], row["away_team"], open_date,  draw_base, draw_slope)
-            decay_c = get_probs(elo_decay, row["home_team"], row["away_team"], prev_date,  draw_base, draw_slope)
-            dc_o    = get_probs(elo_dc,    row["home_team"], row["away_team"], open_date,  draw_base, draw_slope)
-            dc_c    = get_probs(elo_dc,    row["home_team"], row["away_team"], prev_date,  draw_base, draw_slope)
+            base_o  = get_probs(elo_base,  row["home_team"], row["away_team"], open_date,      draw_base, draw_slope)
+            base_c  = get_probs(elo_base,  row["home_team"], row["away_team"], elo_close_date, draw_base, draw_slope)
+            hfa_o   = get_probs(elo_hfa,   row["home_team"], row["away_team"], open_date,      draw_base, draw_slope)
+            hfa_c   = get_probs(elo_hfa,   row["home_team"], row["away_team"], elo_close_date, draw_base, draw_slope)
+            decay_o = get_probs(elo_decay, row["home_team"], row["away_team"], open_date,      draw_base, draw_slope)
+            decay_c = get_probs(elo_decay, row["home_team"], row["away_team"], elo_close_date, draw_base, draw_slope)
+            dc_o    = get_probs(elo_dc,    row["home_team"], row["away_team"], open_date,      draw_base, draw_slope)
+            dc_c    = get_probs(elo_dc,    row["home_team"], row["away_team"], elo_close_date, draw_base, draw_slope)
 
             if None in (base_o, base_c, hfa_o, hfa_c, decay_o, decay_c, dc_o, dc_c):
                 skipped += 1
