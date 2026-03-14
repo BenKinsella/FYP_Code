@@ -20,7 +20,7 @@ from scipy.optimize import minimize
 # ── Config ───────────────────────────────────────────────────────────────────
 DATABASE_URL = os.environ["DATABASE_URL"]
 LEAGUE_ID = 1980
-HFA_FIXED = 42.0
+HFA_FIXED = 39.5
 
 
 # ── Elo / odds helpers ────────────────────────────────────────────────────────

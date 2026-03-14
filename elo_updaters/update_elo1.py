@@ -11,7 +11,7 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 LEAGUE_ID  = 1980
 START_DATE = date(2025, 10, 8)
 INIT_ELO   = 1500
-HFA        = 42
+HFA        = 39.5
 K          = 20
 
 # ── PL team whitelist (results1 names) ───────────────────────────────────────

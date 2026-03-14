@@ -22,7 +22,7 @@ DATABASE_URL = os.environ["DATABASE_URL"]
 LEAGUE_ID  = 1980
 START_DATE = date(2025, 10, 8)
 INIT_ELO   = 1500
-HFA_INIT   = 42.0
+HFA_INIT   = 39.5
 HFA_RATE   = 0.005   # ClubElo's HFA update rate
 K          = 20
 
