@@ -92,24 +92,9 @@ class OddsPortalScraper:
         else:
             return "draw"
 
-    '''
-    def save_to_csv(self, results, filename="matches.csv"):
-        with open(filename, "w", newline="", encoding="utf-8") as f:
-            writer = csv.DictWriter(
-                f,
-                fieldnames=["home_team", "away_team", "score_home", "score_away", "1", "X", "2"],
-                delimiter=",",   # use , so Excel treats headers properly in many locales
-                quoting=csv.QUOTE_MINIMAL
-            )
-            writer.writeheader()
-            writer.writerows(results)
-    '''
 
     def update_results(self):
         odds_df = self.fetch_completed_odds_events()
-        ## results_df = self.fetch_fbref_results()
-        ## results_df = self.fetch_fotmob_results()
-        ## results_df = self.fetch_matchhistory_results()
         results_list = self.parse_matches(self.load_page())
         results_df = pd.DataFrame(results_list)
 
@@ -125,10 +110,6 @@ class OddsPortalScraper:
 
         # Use the parsed timestamp for date_only
         results_df["date_only"] = pd.to_datetime(results_df["starts"]).dt.date
-
-        # For soft-match section that expects *_fbref columns:
-        results_df["home_team_lc_fbref"] = results_df["home_team_lc"]
-        results_df["away_team_lc_fbref"] = results_df["away_team_lc"]
 
         self.logger.info(f"Fetched {len(odds_df)} completed Pinnacle matches.")
         self.logger.info(f"Fetched {len(results_df)} matches from OddsPortal.")
@@ -230,7 +211,7 @@ class OddsPortalScraper:
             self.logger.warning("No matches to insert.")
             return
 
-        # Keep only rows with valid parsed scores from FBref
+        # Keep only rows with valid parsed scores
         merged = merged.dropna(subset=["home_score", "away_score"])
         merged["home_score"] = merged["home_score"].astype(int)
         merged["away_score"] = merged["away_score"].astype(int)
@@ -280,7 +261,7 @@ class OddsPortalScraper:
                         row["league_id"],
                         row["league_name"],
                         row["starts"],
-                        int(row["home_score"]),  # from FBref
+                        int(row["home_score"]),  # from OddsPortal
                         int(row["away_score"]),
                         row["result"],
                     ),
@@ -293,9 +274,6 @@ class OddsPortalScraper:
 
 if __name__ == "__main__":
     DATABASE_URL = os.environ["DATABASE_URL"]
-
-    # scraper = OddsPortalScraper()
-    # matches = scraper.parse_matches(scraper.load_page())
 
     updater = OddsPortalScraper(
         database_url=DATABASE_URL
